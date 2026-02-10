@@ -107,28 +107,29 @@ final class MPS_Social_Autoposter_MVP {
         $clean = $existing;
 
         // Тепер оновлюємо ТІЛЬКИ те, що прийшло у POST:
-        if (isset($options['enabled'])) $clean['enabled'] = (int) !!$options['enabled'];
+        $clean['enabled'] = isset($options['enabled']) ? 1 : 0;
         if (isset($options['only_post_type'])) $clean['only_post_type'] = sanitize_key($options['only_post_type']);
 
-        if (isset($options['tg_enabled'])) $clean['tg_enabled'] = (int) !!$options['tg_enabled'];
+        $clean['tg_enabled'] = isset($options['tg_enabled']) ? 1 : 0;
         if (isset($options['tg_bot_token'])) $clean['tg_bot_token'] = sanitize_text_field($options['tg_bot_token']);
         if (isset($options['tg_chat_id'])) $clean['tg_chat_id'] = sanitize_text_field($options['tg_chat_id']);
         if (isset($options['tg_mode'])) $clean['tg_mode'] = in_array($options['tg_mode'], ['photo','text'], true) ? $options['tg_mode'] : 'photo';
 
-        if (isset($options['viber_enabled'])) $clean['viber_enabled'] = (int) !!$options['viber_enabled'];
+        $clean['viber_enabled'] = isset($options['viber_enabled']) ? 1 : 0;
         if (isset($options['viber_auth_token'])) $clean['viber_auth_token'] = sanitize_text_field($options['viber_auth_token']);
         if (isset($options['viber_sender_name'])) $clean['viber_sender_name'] = sanitize_text_field($options['viber_sender_name']);
         if (isset($options['viber_mode'])) $clean['viber_mode'] = in_array($options['viber_mode'], ['text','photo'], true) ? $options['viber_mode'] : 'text';
 
-        if (isset($options['meta_enabled'])) $clean['meta_enabled'] = (int) !!$options['meta_enabled'];
+        $clean['meta_enabled'] = isset($options['meta_enabled']) ? 1 : 0;
         if (isset($options['meta_app_id'])) $clean['meta_app_id'] = sanitize_text_field($options['meta_app_id']);
         if (isset($options['meta_app_secret'])) $clean['meta_app_secret'] = sanitize_text_field($options['meta_app_secret']);
+        if (isset($options['meta_page_access_token'])) $clean['meta_page_access_token'] = sanitize_text_field($options['meta_page_access_token']);
         if (isset($options['meta_selected_fb_page_id'])) $clean['meta_selected_fb_page_id'] = sanitize_text_field($options['meta_selected_fb_page_id']);
         if (isset($options['meta_selected_ig_user_id'])) $clean['meta_selected_ig_user_id'] = sanitize_text_field($options['meta_selected_ig_user_id']);
         if (isset($options['meta_pages_json'])) $clean['meta_pages_json'] = wp_kses_post($options['meta_pages_json']);
         if (isset($options['meta_ig_users_json'])) $clean['meta_ig_users_json'] = wp_kses_post($options['meta_ig_users_json']);
 
-        if (isset($options['li_enabled'])) $clean['li_enabled'] = (int) !!$options['li_enabled'];
+        $clean['li_enabled'] = isset($options['li_enabled']) ? 1 : 0;
         if (isset($options['li_client_id'])) $clean['li_client_id'] = sanitize_text_field($options['li_client_id']);
         if (isset($options['li_client_secret'])) $clean['li_client_secret'] = sanitize_text_field($options['li_client_secret']);
         if (isset($options['li_selected_org_urn'])) $clean['li_selected_org_urn'] = sanitize_text_field($options['li_selected_org_urn']);
@@ -305,6 +306,13 @@ final class MPS_Social_Autoposter_MVP {
                             <td><input type="password" class="regular-text" name="<?php echo esc_attr($name); ?>[meta_app_secret]" value="<?php echo esc_attr($opt['meta_app_secret'] ?? ''); ?>" /></td>
                         </tr>
                         <tr>
+                            <th scope="row">Page Access Token</th>
+                            <td>
+                                <input type="password" class="regular-text" name="<?php echo esc_attr($name); ?>[meta_page_access_token]" value="<?php echo esc_attr($opt['meta_page_access_token'] ?? ''); ?>" />
+                                <p class="description">Токен сторінки Facebook (pages_manage_posts + pages_read_engagement).</p>
+                            </td>
+                        </tr>
+                        <tr>
                             <th scope="row">OAuth підключення</th>
                             <td>
                                 <p class="description">
@@ -318,7 +326,7 @@ final class MPS_Social_Autoposter_MVP {
                             <th scope="row">Список Facebook Pages (JSON)</th>
                             <td>
                                 <textarea class="large-text code" rows="6" name="<?php echo esc_attr($name); ?>[meta_pages_json]"><?php echo esc_textarea($opt['meta_pages_json'] ?? ''); ?></textarea>
-                                <p class="description">Тимчасово вручну. Формат: <code>[{"id":"123","name":"MPS Page"}]</code></p>
+                                <p class="description">Тимчасово вручну. Формат: <code>[{"id":"123","name":"MPS Page","access_token":"EAAB..."}]</code></p>
                             </td>
                         </tr>
 
@@ -332,6 +340,14 @@ final class MPS_Social_Autoposter_MVP {
                                             <?php echo esc_html($label . ' (' . $id . ')'); ?>
                                         </option>
                                     <?php endforeach; ?>
+                                    <?php
+                                    $selected_page_id = (string)($opt['meta_selected_fb_page_id'] ?? '');
+                                    if ($selected_page_id !== '' && !isset($meta_pages[$selected_page_id])):
+                                    ?>
+                                        <option value="<?php echo esc_attr($selected_page_id); ?>" selected>
+                                            <?php echo esc_html('Поточне збережене значення (' . $selected_page_id . ')'); ?>
+                                        </option>
+                                    <?php endif; ?>
                                 </select>
                             </td>
                         </tr>
@@ -437,16 +453,19 @@ final class MPS_Social_Autoposter_MVP {
         $only = $opt['only_post_type'] ?? 'news';
         if ($post->post_type !== $only) return;
 
-        // Telegram увімкнено?
-        if (empty($opt['tg_enabled'])) return;
+        if (!empty($opt['tg_enabled'])) {
+            $token  = trim((string)($opt['tg_bot_token'] ?? ''));
+            $chatId = trim((string)($opt['tg_chat_id'] ?? ''));
+            $mode   = (string)($opt['tg_mode'] ?? 'photo');
 
-        $token  = trim((string)($opt['tg_bot_token'] ?? ''));
-        $chatId = trim((string)($opt['tg_chat_id'] ?? ''));
-        $mode   = (string)($opt['tg_mode'] ?? 'photo');
+            if ($token !== '' && $chatId !== '') {
+                self::telegram_send_post($token, $chatId, $post->ID, $mode);
+            }
+        }
 
-        if ($token === '' || $chatId === '') return;
-
-        self::telegram_send_post($token, $chatId, $post->ID, $mode);
+        if (!empty($opt['meta_enabled'])) {
+            self::facebook_send_post($opt, $post->ID);
+        }
     }
 
     private static function telegram_send_post(string $token, string $chatId, int $post_id, string $mode): void {
@@ -495,6 +514,89 @@ final class MPS_Social_Autoposter_MVP {
         if ($code < 200 || $code >= 300) {
             error_log("MPS Autoposter Telegram HTTP {$code}: {$body_txt}");
         }
+    }
+
+
+    private static function facebook_send_post(array $opt, int $post_id): void {
+        $page_id = trim((string)($opt['meta_selected_fb_page_id'] ?? ''));
+        if ($page_id === '') {
+            error_log('MPS Autoposter Facebook: page id is empty');
+            return;
+        }
+
+        $token = trim((string)($opt['meta_page_access_token'] ?? ''));
+        if ($token === '') {
+            $token = self::find_fb_page_token_from_json((string)($opt['meta_pages_json'] ?? ''), $page_id);
+        }
+
+        if ($token === '') {
+            error_log('MPS Autoposter Facebook: page access token is empty');
+            return;
+        }
+
+        $title = get_the_title($post_id);
+        $url = get_permalink($post_id);
+
+        $raw = wp_strip_all_tags(get_post_field('post_content', $post_id));
+        $raw = preg_replace('/\s+/', ' ', trim($raw));
+        $excerpt = mb_substr($raw, 0, 350);
+        if (mb_strlen($raw) > 350) {
+            $excerpt .= '…';
+        }
+
+        $message = "📰 {$title}
+
+{$excerpt}
+
+{$url}";
+        $endpoint = "https://graph.facebook.com/v22.0/{$page_id}/feed";
+
+        $resp = wp_remote_post($endpoint, [
+            'timeout' => 20,
+            'body' => [
+                'message' => $message,
+                'access_token' => $token,
+            ],
+        ]);
+
+        if (is_wp_error($resp)) {
+            error_log('MPS Autoposter Facebook WP_Error: ' . $resp->get_error_message());
+            return;
+        }
+
+        $code = (int) wp_remote_retrieve_response_code($resp);
+        $body_txt = (string) wp_remote_retrieve_body($resp);
+
+        if ($code < 200 || $code >= 300) {
+            error_log("MPS Autoposter Facebook HTTP {$code}: {$body_txt}");
+        }
+    }
+
+    private static function find_fb_page_token_from_json(string $json, string $page_id): string {
+        $json = trim($json);
+        if ($json === '') {
+            return '';
+        }
+
+        $decoded = json_decode($json, true);
+        if (!is_array($decoded)) {
+            return '';
+        }
+
+        foreach ($decoded as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $id = isset($row['id']) ? (string)$row['id'] : '';
+            if ($id !== $page_id) {
+                continue;
+            }
+
+            return isset($row['access_token']) ? trim((string)$row['access_token']) : '';
+        }
+
+        return '';
     }
 
     public static function news_latest_endpoint(WP_REST_Request $request): WP_REST_Response
